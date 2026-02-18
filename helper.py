@@ -3,7 +3,6 @@ import pandas as pd
 
 
 def _ensure_medal_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Guarantee Gold/Silver/Bronze columns exist to avoid KeyErrors."""
     for col in ["Gold", "Silver", "Bronze"]:
         if col not in df.columns:
             df[col] = 0
@@ -74,7 +73,6 @@ def country_year_list(df):
 
 
 def data_over_time(df, col):
-    # Count unique (Year, col) pairs per Year
     tmp = df.drop_duplicates(["Year", col])
     out = tmp.groupby("Year").size().reset_index(name="Count").sort_values("Year")
     out.rename(columns={"Year": "Edition"}, inplace=True)
@@ -89,7 +87,6 @@ def most_successful(df, sport):
     top = temp_df["Name"].value_counts().head(15).reset_index()
     top.columns = ["Name", "Medals"]
 
-    # add one representative Sport + region for each athlete
     meta = (
         df[["Name", "Sport", "region"]]
         .dropna(subset=["Name"])
@@ -118,21 +115,18 @@ def country_event_heatmap(df, country):
     )
 
     new_df = temp_df[temp_df["region"] == country]
-    pt = new_df.pivot_table(
-        index="Sport", columns="Year", values="Medal", aggfunc="count"
-    ).fillna(0)
+    pt = new_df.pivot_table(index="Sport", columns="Year", values="Medal", aggfunc="count").fillna(0)
     return pt
 
 
 def most_successful_countrywise(df, country):
-    # FIX: no 'index' merge; return predictable columns
+    # FIX: no 'index' merge at all
     temp_df = df.dropna(subset=["Medal"]).copy()
     temp_df = temp_df[temp_df["region"] == country]
 
     top = temp_df["Name"].value_counts().head(10).reset_index()
     top.columns = ["Name", "Medals"]
 
-    # attach a representative sport for display
     meta = (
         temp_df[["Name", "Sport"]]
         .dropna(subset=["Name"])
@@ -159,8 +153,4 @@ def men_vs_women(df):
     women = athlete_df[athlete_df["Sex"] == "F"].groupby("Year")["Name"].count().reset_index()
 
     final = men.merge(women, on="Year", how="left")
-    final.rename(columns={"Name_x": "Male", "Name_y": "Female"}, inplace=True)
-    final["Female"] = final["Female"].fillna(0).astype(int)
-    final["Male"] = final["Male"].fillna(0).astype(int)
-
-    return final
+    final.rename(columns={"Name_x": "Male", "Name_y": "Female"}

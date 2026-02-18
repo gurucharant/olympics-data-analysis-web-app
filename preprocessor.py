@@ -2,21 +2,20 @@ import pandas as pd
 
 
 def preprocess(df, region_df):
-    # Filter Summer Olympics only
+    # Keep Summer Olympics only
     df = df[df["Season"] == "Summer"].copy()
 
-    # Merge with regions
+    # Merge region mapping
     df = df.merge(region_df, on="NOC", how="left")
 
-    # Drop duplicates
+    # Remove duplicates
     df.drop_duplicates(inplace=True)
 
-    # One-hot encode medals; ensure numeric ints
+    # One-hot medals into columns
     medal_dummies = pd.get_dummies(df["Medal"], dtype=int)
-
     df = pd.concat([df, medal_dummies], axis=1)
 
-    # Ensure columns exist even if dataset slice misses some medal types
+    # Ensure medal columns always exist
     for col in ["Gold", "Silver", "Bronze"]:
         if col not in df.columns:
             df[col] = 0

@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+import urllib.request
 
 import preprocessor
 import helper
@@ -11,16 +12,40 @@ import seaborn as sns
 
 
 # -----------------------------
-# Robust file loading (fixes FileNotFoundError)
+# Hugging Face dataset links (your links)
+# -----------------------------
+ATHLETE_URL = "https://huggingface.co/datasets/urwithgc/olympics-data/resolve/main/athlete_events.csv"
+REGION_URL = "https://huggingface.co/datasets/urwithgc/olympics-data/resolve/main/noc_regions.csv"
+
+
+# -----------------------------
+# Robust data download + caching
 # -----------------------------
 BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+
+ATHLETE_PATH = DATA_DIR / "athlete_events.csv"
+REGION_PATH = DATA_DIR / "noc_regions.csv"
+
+
+def download_if_missing(url: str, path: Path) -> None:
+    if not path.exists():
+        with st.spinner(f"Downloading {path.name}... (first run only)"):
+            urllib.request.urlretrieve(url, path)
+
 
 @st.cache_data(show_spinner=False)
-def load_data():
-    df_ = pd.read_csv(BASE_DIR / "athlete_events.csv")
-    region_df_ = pd.read_csv(BASE_DIR / "noc_regions.csv")
-    df_ = preprocessor.preprocess(df_, region_df_)
-    return df_
+def load_data() -> pd.DataFrame:
+    download_if_missing(ATHLETE_URL, ATHLETE_PATH)
+    download_if_missing(REGION_URL, REGION_PATH)
+
+    df_raw = pd.read_csv(ATHLETE_PATH)
+    region_df = pd.read_csv(REGION_PATH)
+
+    df = preprocessor.preprocess(df_raw, region_df)
+    return df
+
 
 df = load_data()
 
@@ -30,14 +55,12 @@ df = load_data()
 # -----------------------------
 st.sidebar.title("Olympics Analysis")
 
-# Prefer local image if present; otherwise fall back to URL
+# Optional logo if you have it in repo
 local_logo_png = BASE_DIR / "Olympic_rings_without_rims.png"
 if local_logo_png.exists():
     st.sidebar.image(str(local_logo_png))
 else:
-    st.sidebar.image(
-        "https://e7.pngegg.com/pngimages/1020/402/png-clipart-2024-summer-olympics-brand-circle-area-olympic-rings-olympics-logo-text-sport.png"
-    )
+    st.sidebar.write("🏅 Olympics Dashboard")
 
 user_menu = st.sidebar.radio(
     "Select an Option",
@@ -120,7 +143,7 @@ if user_menu == "Overall Analysis":
     fig, ax = plt.subplots(figsize=(20, 20))
     x = df.drop_duplicates(["Year", "Sport", "Event"])
     pt = x.pivot_table(index="Sport", columns="Year", values="Event", aggfunc="count").fillna(0).astype(int)
-    ax = sns.heatmap(pt, annot=False)
+    sns.heatmap(pt, annot=False, ax=ax)
     st.pyplot(fig)
 
     st.title("Most successful Athletes")
@@ -148,7 +171,7 @@ if user_menu == "Country-wise Analysis":
     st.title(f"{selected_country} excels in the following sports")
     pt = helper.country_event_heatmap(df, selected_country)
     fig, ax = plt.subplots(figsize=(20, 20))
-    ax = sns.heatmap(pt, annot=False)
+    sns.heatmap(pt, annot=False, ax=ax)
     st.pyplot(fig)
 
     st.title(f"Top 10 athletes of {selected_country}")
@@ -162,49 +185,20 @@ if user_menu == "Country-wise Analysis":
 if user_menu == "Athlete wise Analysis":
     athlete_df = df.drop_duplicates(subset=["Name", "region"]).copy()
 
-    # ---- FIX: remove plotly figure_factory distplot (no scipy needed)
+    # ---- No scipy needed: use plotly express histogram
     st.title("Distribution of Age (Overall vs Medalists)")
     temp = athlete_df.dropna(subset=["Age"]).copy()
     temp["MedalType"] = temp["Medal"].fillna("No Medal")
     temp = temp[temp["MedalType"].isin(["Gold", "Silver", "Bronze", "No Medal"])]
 
-    fig = px.histogram(
-        temp,
-        x="Age",
-        color="MedalType",
-        nbins=30,
-        barmode="overlay",
-    )
+    fig = px.histogram(temp, x="Age", color="MedalType", nbins=30, barmode="overlay")
     st.plotly_chart(fig, use_container_width=True)
-
-    st.title("Distribution of Age wrt Sports (Gold Medalists)")
-    famous_sports = [
-        "Basketball", "Judo", "Football", "Tug-Of-War", "Athletics", "Swimming",
-        "Badminton", "Sailing", "Gymnastics", "Art Competitions", "Handball",
-        "Weightlifting", "Wrestling", "Water Polo", "Hockey", "Rowing", "Fencing",
-        "Shooting", "Boxing", "Taekwondo", "Cycling", "Diving", "Canoeing",
-        "Tennis", "Golf", "Softball", "Archery", "Volleyball",
-        "Synchronized Swimming", "Table Tennis", "Baseball", "Rhythmic Gymnastics",
-        "Rugby Sevens", "Beach Volleyball", "Triathlon", "Rugby", "Polo", "Ice Hockey"
-    ]
-
-    gold = athlete_df[athlete_df["Medal"] == "Gold"].copy()
-    gold = gold[gold["Sport"].isin(famous_sports)].dropna(subset=["Age"])
-
-    fig = px.histogram(
-        gold,
-        x="Age",
-        color="Sport",
-        nbins=30,
-        barmode="overlay",
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-    sport_list = sorted(df["Sport"].dropna().unique().tolist())
-    sport_list.insert(0, "Overall")
 
     st.title("Height Vs Weight")
+    sport_list = sorted(df["Sport"].dropna().unique().tolist())
+    sport_list.insert(0, "Overall")
     selected_sport = st.selectbox("Select a Sport", sport_list)
+
     temp_df = helper.weight_v_height(df, selected_sport)
 
     fig, ax = plt.subplots()
